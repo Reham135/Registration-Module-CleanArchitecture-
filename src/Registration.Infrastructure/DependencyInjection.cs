@@ -24,7 +24,8 @@ public static class DependencyInjection
 
         services.Configure<RabbitMqOptions>(configuration.GetSection(RabbitMqOptions.SectionName));
 
-        services.AddScoped<IIntegrationEventPublisher, IntegrationEventPublisher>();
+        services.Configure<OutboxOptions>(configuration.GetSection(OutboxOptions.SectionName));
+        services.AddHostedService<OutboxProcessorBackgroundService>();
 
         services.AddMassTransit(busConfigurator =>
         {

@@ -1,8 +1,8 @@
 using MediatR;
-using Microsoft.Extensions.Logging;
 using Registration.Application.Common.Exceptions;
 using Registration.Application.Common.Interfaces;
 using Registration.Application.Common.IntegrationEvents;
+using Registration.Application.Common.Models;
 using Registration.Domain.Entities;
 using Registration.Domain.ValueObjects;
 
@@ -12,19 +12,13 @@ public class CreateRegistrationCommandHandler : IRequestHandler<CreateRegistrati
 {
     private readonly IRegistrationRepository _registrationRepository;
     private readonly IDateTimeProvider _dateTimeProvider;
-    private readonly IIntegrationEventPublisher _integrationEventPublisher;
-    private readonly ILogger<CreateRegistrationCommandHandler> _logger;
 
     public CreateRegistrationCommandHandler(
         IRegistrationRepository registrationRepository,
-        IDateTimeProvider dateTimeProvider,
-        IIntegrationEventPublisher integrationEventPublisher,
-        ILogger<CreateRegistrationCommandHandler> logger)
+        IDateTimeProvider dateTimeProvider)
     {
         _registrationRepository = registrationRepository;
         _dateTimeProvider = dateTimeProvider;
-        _integrationEventPublisher = integrationEventPublisher;
-        _logger = logger;
     }
 
     public async Task<int> Handle(CreateRegistrationCommand request, CancellationToken cancellationToken)
@@ -56,11 +50,11 @@ public class CreateRegistrationCommandHandler : IRequestHandler<CreateRegistrati
             addresses,
             _dateTimeProvider.Today);
 
-        await _registrationRepository.AddAsync(registration, cancellationToken);
-        await _registrationRepository.SaveChangesAsync(cancellationToken);
-
-        try
+        await _registrationRepository.ExecuteInTransactionAsync(async () =>
         {
+            await _registrationRepository.AddAsync(registration, cancellationToken);
+            await _registrationRepository.SaveChangesAsync(cancellationToken);
+
             var integrationEvent = new RegistrationCreatedIntegrationEvent(
                 registration.Id,
                 registration.FirstName.Value,
@@ -69,12 +63,11 @@ public class CreateRegistrationCommandHandler : IRequestHandler<CreateRegistrati
                 registration.MobileNumber.Value,
                 _dateTimeProvider.Today.ToDateTime(TimeOnly.MinValue));
 
-            await _integrationEventPublisher.PublishAsync(integrationEvent, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to publish RegistrationCreatedIntegrationEvent for registration {RegistrationId}.", registration.Id);
-        }
+            var outboxMessage = OutboxMessage.Create(integrationEvent, _dateTimeProvider.Today.ToDateTime(TimeOnly.MinValue));
+
+            await _registrationRepository.AddOutboxMessageAsync(outboxMessage, cancellationToken);
+            await _registrationRepository.SaveChangesAsync(cancellationToken);
+        }, cancellationToken);
 
         return registration.Id;
     }

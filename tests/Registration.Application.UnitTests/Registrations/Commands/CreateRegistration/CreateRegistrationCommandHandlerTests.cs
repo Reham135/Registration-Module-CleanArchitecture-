@@ -1,9 +1,8 @@
 using FluentAssertions;
-using Microsoft.Extensions.Logging;
 using Moq;
 using Registration.Application.Common.Exceptions;
 using Registration.Application.Common.Interfaces;
-using Registration.Application.Common.IntegrationEvents;
+using Registration.Application.Common.Models;
 using Registration.Application.Registrations.Commands.CreateRegistration;
 using Registration.Application.Registrations.DTOs;
 using Xunit;
@@ -16,8 +15,6 @@ public class CreateRegistrationCommandHandlerTests
 
     private readonly Mock<IRegistrationRepository> _registrationRepositoryMock;
     private readonly Mock<IDateTimeProvider> _dateTimeProviderMock;
-    private readonly Mock<IIntegrationEventPublisher> _integrationEventPublisherMock;
-    private readonly Mock<ILogger<CreateRegistrationCommandHandler>> _loggerMock;
     private readonly CreateRegistrationCommandHandler _handler;
 
     public CreateRegistrationCommandHandlerTests()
@@ -25,18 +22,16 @@ public class CreateRegistrationCommandHandlerTests
         _registrationRepositoryMock = new Mock<IRegistrationRepository>();
         _registrationRepositoryMock.Setup(r => r.ExistsByNormalizedEmailAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
         _registrationRepositoryMock.Setup(r => r.ExistsByMobileNumberAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        _registrationRepositoryMock
+            .Setup(r => r.ExecuteInTransactionAsync(It.IsAny<Func<Task>>(), It.IsAny<CancellationToken>()))
+            .Returns((Func<Task> operation, CancellationToken _) => operation());
 
         _dateTimeProviderMock = new Mock<IDateTimeProvider>();
         _dateTimeProviderMock.Setup(d => d.Today).Returns(Today);
 
-        _integrationEventPublisherMock = new Mock<IIntegrationEventPublisher>();
-        _loggerMock = new Mock<ILogger<CreateRegistrationCommandHandler>>();
-
         _handler = new CreateRegistrationCommandHandler(
             _registrationRepositoryMock.Object,
-            _dateTimeProviderMock.Object,
-            _integrationEventPublisherMock.Object,
-            _loggerMock.Object);
+            _dateTimeProviderMock.Object);
     }
 
     private static CreateRegistrationCommand ValidCommand() => new()
@@ -61,29 +56,17 @@ public class CreateRegistrationCommandHandlerTests
         result.Should().Be(0); // Id is assigned by the database; not set in this in-memory scenario.
 
         _registrationRepositoryMock.Verify(r => r.AddAsync(It.IsAny<Domain.Entities.Registration>(), It.IsAny<CancellationToken>()), Times.Once);
-        _registrationRepositoryMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _registrationRepositoryMock.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
     [Fact]
-    public async Task Handle_WithValidCommand_PublishesRegistrationCreatedIntegrationEvent()
+    public async Task Handle_WithValidCommand_AddsOutboxMessage()
     {
         await _handler.Handle(ValidCommand(), CancellationToken.None);
 
-        _integrationEventPublisherMock.Verify(
-            p => p.PublishAsync(It.IsAny<RegistrationCreatedIntegrationEvent>(), It.IsAny<CancellationToken>()),
+        _registrationRepositoryMock.Verify(
+            r => r.AddOutboxMessageAsync(It.IsAny<OutboxMessage>(), It.IsAny<CancellationToken>()),
             Times.Once);
-    }
-
-    [Fact]
-    public async Task Handle_WhenPublishingFails_StillReturnsId()
-    {
-        _integrationEventPublisherMock
-            .Setup(p => p.PublishAsync(It.IsAny<RegistrationCreatedIntegrationEvent>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new InvalidOperationException("Broker unavailable"));
-
-        var result = await _handler.Handle(ValidCommand(), CancellationToken.None);
-
-        result.Should().Be(0);
     }
 
     [Fact]

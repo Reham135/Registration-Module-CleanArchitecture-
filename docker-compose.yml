@@ -45,6 +45,8 @@ services:
       RabbitMq__VirtualHost: /
       RabbitMq__Username: guest
       RabbitMq__Password: guest
+      Outbox__PollingIntervalSeconds: "5"
+      Outbox__BatchSize: "20"
       Email__SmtpHost: smtp.gmail.com
       Email__Port: "587"
       Email__FromAddress: ${EMAIL_FROM_ADDRESS:-}
