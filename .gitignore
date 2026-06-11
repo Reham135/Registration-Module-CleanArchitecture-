@@ -1,0 +1,22 @@
+## .NET
+bin/
+obj/
+out/
+*.user
+*.userosscache
+*.suo
+.vs/
+.vscode/
+
+## Test results
+[Tt]est[Rr]esult*/
+*.trx
+*.coverage
+*.coveragexml
+
+## Env
+.env
+*.env
+
+## Rider/VS
+*.DotSettings.user
