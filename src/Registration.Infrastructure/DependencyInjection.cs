@@ -28,9 +28,7 @@ public static class DependencyInjection
         services.AddMassTransit(busConfigurator =>
         {
             busConfigurator.AddConsumer<WelcomeEmailConsumer>();
-            busConfigurator.AddConsumer<WelcomeSmsConsumer>();
             busConfigurator.AddConsumer<RegistrationAuditConsumer>();
-            busConfigurator.AddConsumer<ExternalServiceNotificationConsumer>();
 
             // MassTransit built-in Outbox — intercepts IPublishEndpoint calls inside a
             // handler and stores them in the MassTransit outbox tables within the same
