@@ -36,6 +36,7 @@ builder.Services.AddSwaggerGen(options =>
     });
 
     options.EnableAnnotations();
+    options.ExampleFilters();
 });
 builder.Services.AddSwaggerExamplesFromAssemblyOf<Program>();
 
