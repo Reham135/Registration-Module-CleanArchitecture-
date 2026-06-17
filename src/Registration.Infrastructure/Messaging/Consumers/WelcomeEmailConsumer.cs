@@ -24,7 +24,7 @@ public class WelcomeEmailConsumer : IConsumer<RegistrationCreatedIntegrationEven
         var message = context.Message;
         var fullName = $"{message.FirstName} {message.LastName}";
 
-        var subject = "Welcome to the Registration Module!";
+        var subject = "Welcome to Our Portal!";
         var body =
             $"""
              Hi {fullName},

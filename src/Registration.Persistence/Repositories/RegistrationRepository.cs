@@ -1,7 +1,5 @@
 using Microsoft.EntityFrameworkCore;
 using Registration.Application.Common.Interfaces;
-using Registration.Application.Common.Models;
-using Registration.Domain.Entities;
 
 namespace Registration.Persistence.Repositories;
 
@@ -46,24 +44,5 @@ public class RegistrationRepository : IRegistrationRepository
     public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         return _context.SaveChangesAsync(cancellationToken);
-    }
-
-    public async Task AddOutboxMessageAsync(OutboxMessage outboxMessage, CancellationToken cancellationToken = default)
-    {
-        await _context.OutboxMessages.AddAsync(outboxMessage, cancellationToken);
-    }
-
-    public async Task ExecuteInTransactionAsync(Func<Task> operation, CancellationToken cancellationToken = default)
-    {
-        var strategy = _context.Database.CreateExecutionStrategy();
-
-        await strategy.ExecuteAsync(async () =>
-        {
-            await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
-
-            await operation();
-
-            await transaction.CommitAsync(cancellationToken);
-        });
     }
 }

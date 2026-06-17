@@ -1,8 +1,9 @@
 using FluentAssertions;
+using MassTransit;
 using Moq;
 using Registration.Application.Common.Exceptions;
+using Registration.Application.Common.IntegrationEvents;
 using Registration.Application.Common.Interfaces;
-using Registration.Application.Common.Models;
 using Registration.Application.Registrations.Commands.CreateRegistration;
 using Registration.Application.Registrations.DTOs;
 using Xunit;
@@ -15,6 +16,7 @@ public class CreateRegistrationCommandHandlerTests
 
     private readonly Mock<IRegistrationRepository> _registrationRepositoryMock;
     private readonly Mock<IDateTimeProvider> _dateTimeProviderMock;
+    private readonly Mock<IPublishEndpoint> _publishEndpointMock;
     private readonly CreateRegistrationCommandHandler _handler;
 
     public CreateRegistrationCommandHandlerTests()
@@ -22,16 +24,16 @@ public class CreateRegistrationCommandHandlerTests
         _registrationRepositoryMock = new Mock<IRegistrationRepository>();
         _registrationRepositoryMock.Setup(r => r.ExistsByNormalizedEmailAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
         _registrationRepositoryMock.Setup(r => r.ExistsByMobileNumberAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
-        _registrationRepositoryMock
-            .Setup(r => r.ExecuteInTransactionAsync(It.IsAny<Func<Task>>(), It.IsAny<CancellationToken>()))
-            .Returns((Func<Task> operation, CancellationToken _) => operation());
 
         _dateTimeProviderMock = new Mock<IDateTimeProvider>();
         _dateTimeProviderMock.Setup(d => d.Today).Returns(Today);
 
+        _publishEndpointMock = new Mock<IPublishEndpoint>();
+
         _handler = new CreateRegistrationCommandHandler(
             _registrationRepositoryMock.Object,
-            _dateTimeProviderMock.Object);
+            _dateTimeProviderMock.Object,
+            _publishEndpointMock.Object);
     }
 
     private static CreateRegistrationCommand ValidCommand() => new()
@@ -60,12 +62,12 @@ public class CreateRegistrationCommandHandlerTests
     }
 
     [Fact]
-    public async Task Handle_WithValidCommand_AddsOutboxMessage()
+    public async Task Handle_WithValidCommand_PublishesIntegrationEvent()
     {
         await _handler.Handle(ValidCommand(), CancellationToken.None);
 
-        _registrationRepositoryMock.Verify(
-            r => r.AddOutboxMessageAsync(It.IsAny<OutboxMessage>(), It.IsAny<CancellationToken>()),
+        _publishEndpointMock.Verify(
+            p => p.Publish(It.IsAny<RegistrationCreatedIntegrationEvent>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 

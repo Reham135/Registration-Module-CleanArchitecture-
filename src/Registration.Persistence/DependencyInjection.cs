@@ -31,7 +31,6 @@ public static class DependencyInjection
         services.AddScoped<IApplicationDbContext>(sp => sp.GetRequiredService<ApplicationDbContext>());
         services.AddScoped<IRegistrationRepository, RegistrationRepository>();
         services.AddScoped<ILookupRepository, LookupRepository>();
-        services.AddScoped<IOutboxRepository, OutboxRepository>();
 
         return services;
     }

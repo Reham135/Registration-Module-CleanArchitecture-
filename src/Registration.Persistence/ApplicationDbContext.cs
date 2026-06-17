@@ -1,6 +1,6 @@
+using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Registration.Application.Common.Interfaces;
-using Registration.Application.Common.Models;
 using Registration.Domain.Entities;
 
 namespace Registration.Persistence;
@@ -19,11 +19,18 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     public DbSet<City> Cities => Set<City>();
 
-    public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
-
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
+
+        // Register MassTransit built-in outbox tables:
+        //   - InboxState  : tracks consumed message state (deduplication)
+        //   - OutboxMessage : stores pending outbound messages
+        //   - OutboxState   : per-endpoint delivery state
+        modelBuilder.AddInboxStateEntity();
+        modelBuilder.AddOutboxMessageEntity();
+        modelBuilder.AddOutboxStateEntity();
+
         base.OnModelCreating(modelBuilder);
     }
 }

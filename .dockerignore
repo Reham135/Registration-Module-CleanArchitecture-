@@ -4,3 +4,5 @@
 **/.git/
 **/*.md
 .env
+**/appsettings.Development.json
+**/appsettings.Local.json

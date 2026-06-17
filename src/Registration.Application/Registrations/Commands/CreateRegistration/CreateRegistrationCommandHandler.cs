@@ -1,8 +1,8 @@
+using MassTransit;
 using MediatR;
 using Registration.Application.Common.Exceptions;
 using Registration.Application.Common.Interfaces;
 using Registration.Application.Common.IntegrationEvents;
-using Registration.Application.Common.Models;
 using Registration.Domain.Entities;
 using Registration.Domain.ValueObjects;
 
@@ -12,13 +12,16 @@ public class CreateRegistrationCommandHandler : IRequestHandler<CreateRegistrati
 {
     private readonly IRegistrationRepository _registrationRepository;
     private readonly IDateTimeProvider _dateTimeProvider;
+    private readonly IPublishEndpoint _publishEndpoint;
 
     public CreateRegistrationCommandHandler(
         IRegistrationRepository registrationRepository,
-        IDateTimeProvider dateTimeProvider)
+        IDateTimeProvider dateTimeProvider,
+        IPublishEndpoint publishEndpoint)
     {
         _registrationRepository = registrationRepository;
         _dateTimeProvider = dateTimeProvider;
+        _publishEndpoint = publishEndpoint;
     }
 
     public async Task<int> Handle(CreateRegistrationCommand request, CancellationToken cancellationToken)
@@ -50,24 +53,24 @@ public class CreateRegistrationCommandHandler : IRequestHandler<CreateRegistrati
             addresses,
             _dateTimeProvider.Today);
 
-        await _registrationRepository.ExecuteInTransactionAsync(async () =>
-        {
-            await _registrationRepository.AddAsync(registration, cancellationToken);
-            await _registrationRepository.SaveChangesAsync(cancellationToken);
+        await _registrationRepository.AddAsync(registration, cancellationToken);
+        await _registrationRepository.SaveChangesAsync(cancellationToken); // generates registration.Id
 
-            var integrationEvent = new RegistrationCreatedIntegrationEvent(
-                registration.Id,
-                registration.FirstName.Value,
-                registration.LastName.Value,
-                registration.Email.Value,
-                registration.MobileNumber.Value,
-                _dateTimeProvider.Today.ToDateTime(TimeOnly.MinValue));
+        var integrationEvent = new RegistrationCreatedIntegrationEvent(
+            registration.Id,
+            registration.FirstName.Value,
+            registration.LastName.Value,
+            registration.Email.Value,
+            registration.MobileNumber.Value,
+            _dateTimeProvider.Today.ToDateTime(TimeOnly.MinValue));
 
-            var outboxMessage = OutboxMessage.Create(integrationEvent, _dateTimeProvider.Today.ToDateTime(TimeOnly.MinValue));
+        // MassTransit intercepts this call and adds an OutboxMessage row to the DbContext
+        // change tracker instead of sending to RabbitMQ immediately.
+        await _publishEndpoint.Publish(integrationEvent, cancellationToken);
 
-            await _registrationRepository.AddOutboxMessageAsync(outboxMessage, cancellationToken);
-            await _registrationRepository.SaveChangesAsync(cancellationToken);
-        }, cancellationToken);
+        // Persist the OutboxMessage row that MassTransit added to the change tracker above.
+        // The background OutboxDeliveryService then picks it up and forwards it to RabbitMQ.
+        await _registrationRepository.SaveChangesAsync(cancellationToken);
 
         return registration.Id;
     }

@@ -7,6 +7,7 @@ using Registration.Infrastructure.Email;
 using Registration.Infrastructure.Messaging;
 using Registration.Infrastructure.Messaging.Consumers;
 using Registration.Infrastructure.Services;
+using Registration.Persistence;
 
 namespace Registration.Infrastructure;
 
@@ -24,15 +25,31 @@ public static class DependencyInjection
 
         services.Configure<RabbitMqOptions>(configuration.GetSection(RabbitMqOptions.SectionName));
 
-        services.Configure<OutboxOptions>(configuration.GetSection(OutboxOptions.SectionName));
-        services.AddHostedService<OutboxProcessorBackgroundService>();
-
         services.AddMassTransit(busConfigurator =>
         {
             busConfigurator.AddConsumer<WelcomeEmailConsumer>();
             busConfigurator.AddConsumer<WelcomeSmsConsumer>();
             busConfigurator.AddConsumer<RegistrationAuditConsumer>();
             busConfigurator.AddConsumer<ExternalServiceNotificationConsumer>();
+
+            // MassTransit built-in Outbox — intercepts IPublishEndpoint calls inside a
+            // handler and stores them in the MassTransit outbox tables within the same
+            // EF Core transaction, then delivers them once the transaction commits.
+            busConfigurator.AddEntityFrameworkOutbox<ApplicationDbContext>(outboxCfg =>
+            {
+                outboxCfg.UseSqlServer();
+
+                // Poll for unsent messages every 5 seconds.
+                outboxCfg.QueryDelay = TimeSpan.FromSeconds(5);
+
+                // Suppress duplicate deliveries within a 30-second window.
+                outboxCfg.DuplicateDetectionWindow = TimeSpan.FromSeconds(30);
+
+                // Enable the bus-side outbox so that IPublishEndpoint.Publish() calls
+                // from non-consumer code (e.g. command handlers) are intercepted and
+                // stored in the OutboxMessage table instead of going to RabbitMQ directly.
+                outboxCfg.UseBusOutbox();
+            });
 
             busConfigurator.UsingRabbitMq((context, cfg) =>
             {
@@ -44,7 +61,12 @@ public static class DependencyInjection
                     h.Password(options.Password);
                 });
 
-                cfg.ConfigureEndpoints(context);
+                cfg.UseMessageRetry(r => r.Intervals(
+                    TimeSpan.FromSeconds(5),
+                    TimeSpan.FromSeconds(15),
+                    TimeSpan.FromSeconds(30)));
+
+                cfg.ConfigureEndpoints(context); // auto-creates one queue per consumer
             });
         });
 
